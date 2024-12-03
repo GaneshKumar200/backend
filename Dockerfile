@@ -76,7 +76,7 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 WORKDIR /var/www
 
 # Copy backend files
-COPY backend .
+COPY .
 
 # Expose ports
 EXPOSE 80 8000
