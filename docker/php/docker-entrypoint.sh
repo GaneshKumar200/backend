@@ -5,7 +5,7 @@ set -e
 kill_port_9001() {
     echo "Checking for processes using port 9001..."
     
-    # Alternative method to find and kill processes using port 9001
+    # Use netstat to find processes on port 9001
     PORT_PIDS=$(netstat -tlpn | grep ':9001 ' | awk '{print $7}' | cut -d'/' -f1)
     
     if [ ! -z "$PORT_PIDS" ]; then
@@ -30,19 +30,20 @@ if [ -f .env ]; then
     export $(cat .env | xargs)
 fi
 
+# Install Composer dependencies
+if [ -f "composer.json" ]; then
+    echo "Installing Composer dependencies..."
+    composer install --no-interaction --no-scripts --no-progress
+fi
+
+# Run database migrations (optional, uncomment if using migrations)
+# php artisan migrate --force
+
 # Run port conflict resolution
 kill_port_9001
 
 # Start cron
 cron
 
-# Start supervisord
-supervisord --configuration /etc/supervisord.conf
-
-# Handle additional command-line arguments
-if [ "${1#-}" != "$1" ]; then
-    set -- php-fpm "$@"
-fi
-
-# Execute the final command
+# Execute the final command (usually supervisord)
 exec "$@"
