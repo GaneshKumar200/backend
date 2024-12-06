@@ -19,7 +19,8 @@ RUN apt-get update && apt-get install -y \
     cron \
     libicu-dev \
     nano \
-    nginx
+    nginx \
+    curl  # Add curl for potential health checks or debugging
 
 # Set locales
 RUN apt-get update \
@@ -27,6 +28,7 @@ RUN apt-get update \
     && sed -i -e 's/# ru_RU.UTF-8 UTF-8/ru_RU.UTF-8 UTF-8/' /etc/locale.gen \
     && dpkg-reconfigure --frontend=noninteractive locales \
     && update-locale LANG=ru_RU.UTF-8
+
 ENV LANG ru_RU.UTF-8
 ENV LC_ALL ru_RU.UTF-8
 
@@ -54,14 +56,10 @@ RUN docker-php-ext-configure opcache --enable-opcache \
 # Use production PHP configuration
 RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
 
-# Copy Nginx configuration
+# Copy configuration files
 COPY docker/nginx/nginx.conf /etc/nginx/nginx.conf
 COPY docker/nginx/conf.d/ /etc/nginx/conf.d/
-
-# Copy supervisor configuration
 COPY docker/php/supervisord.conf /etc/supervisord.conf
-
-# Copy crontab
 COPY docker/php/crontab /etc/cron.d/crontab
 RUN chmod 0644 /etc/cron.d/crontab
 
@@ -78,9 +76,15 @@ WORKDIR /var/www
 # Copy backend files
 COPY --chown=www-data:www-data . /var/www
 
+# Create necessary directories and set permissions
+RUN mkdir -p /var/log/supervisor \
+    && mkdir -p /var/run/supervisor \
+    && chown -R www-data:www-data /var/log/supervisor \
+    && chown -R www-data:www-data /var/run/supervisor
+
 # Expose ports
 EXPOSE 80 8000
 
 # Set entrypoint and default command
-ENTRYPOINT ["docker-entrypoint"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint"]
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
