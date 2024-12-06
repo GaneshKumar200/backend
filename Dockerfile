@@ -20,70 +20,48 @@ RUN apt-get update && apt-get install -y \
     libicu-dev \
     nano \
     nginx \
-    curl  # Add curl for potential health checks or debugging
+    curl \
+    net-tools \  # Add net-tools for netstat
+    procps      # Add procps for process management
 
-# Set locales
-RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y locales \
-    && sed -i -e 's/# ru_RU.UTF-8 UTF-8/ru_RU.UTF-8 UTF-8/' /etc/locale.gen \
-    && dpkg-reconfigure --frontend=noninteractive locales \
-    && update-locale LANG=ru_RU.UTF-8
+# Rest of your existing Dockerfile remains the same...
 
-ENV LANG ru_RU.UTF-8
-ENV LC_ALL ru_RU.UTF-8
+# Modify the entrypoint script to handle port conflicts
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+# Function to check and kill process using port 9001\n\
+kill_port_9001() {\n\
+    echo "Checking for processes using port 9001..."\n\
+    PORT_PID=$(lsof -t -i:9001)\n\
+    if [ ! -z "$PORT_PID" ]; then\n\
+        echo "Found process $PORT_PID using port 9001. Killing..."\n\
+        kill -9 $PORT_PID\n\
+        sleep 2\n\
+    fi\n\
+\n\
+    # Additional cleanup\n\
+    rm -f /var/run/supervisor.sock\n\
+    rm -f /var/run/supervisord.pid\n\
+}\n\
+\n\
+# Run port conflict resolution\n\
+kill_port_9001\n\
+\n\
+# Run any pre-start scripts or migrations\n\
+php artisan migrate --force\n\
+php artisan config:clear\n\
+php artisan cache:clear\n\
+\n\
+# Start cron\n\
+service cron start\n\
+\n\
+# Execute the CMD passed to the entrypoint\n\
+exec "$@"\n\
+' > /usr/local/bin/docker-entrypoint
 
-# Clean up package lists
-RUN apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# Install PHP extensions
-RUN docker-php-source extract \
-    && docker-php-ext-install bcmath exif pcntl pdo_mysql zip sockets \
-    && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install gd \
-    && docker-php-ext-configure intl \
-    && docker-php-ext-install intl \
-    && pecl install redis-5.3.4 \
-    && docker-php-ext-enable redis \
-    && docker-php-source delete
-
-# Install MySQL client
-RUN apt-get update && apt-get install default-mysql-client -y
-
-# Configure OPcache
-RUN docker-php-ext-configure opcache --enable-opcache \
-    && docker-php-ext-install opcache
-
-# Use production PHP configuration
-RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
-
-# Copy configuration files
-COPY docker/nginx/nginx.conf /etc/nginx/nginx.conf
-COPY docker/nginx/conf.d/ /etc/nginx/conf.d/
-COPY docker/php/supervisord.conf /etc/supervisord.conf
-COPY docker/php/crontab /etc/cron.d/crontab
-RUN chmod 0644 /etc/cron.d/crontab
-
-# Copy entrypoint script
-COPY docker/php/docker-entrypoint.sh /usr/local/bin/docker-entrypoint
+# Ensure executable permissions
 RUN chmod +x /usr/local/bin/docker-entrypoint
-
-# Copy Composer
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
-
-# Set working directory
-WORKDIR /var/www
-
-# Copy backend files
-COPY --chown=www-data:www-data . /var/www
-
-# Create necessary directories and set permissions
-RUN mkdir -p /var/log/supervisor \
-    && mkdir -p /var/run/supervisor \
-    && chown -R www-data:www-data /var/log/supervisor \
-    && chown -R www-data:www-data /var/run/supervisor
-
-# Expose ports
-EXPOSE 80 8000
 
 # Set entrypoint and default command
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint"]
